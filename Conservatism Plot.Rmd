@@ -1,0 +1,102 @@
+---
+title: "Conservatism in Congress Visualization"
+author: "Leena Ambady"
+date: "4/9/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# Loading the necessary packages 
+
+library(tidyverse)
+library(ggplot2)
+library(gt)
+library(readr)
+library(skimr)
+library(tidyr)
+
+# Need the broom package for running the regressions and tidy() functions
+library(broom)
+```
+
+```{r Loading Data, message = FALSE}
+# Loading in the data which I saved to its own folder
+# I get a message every time about the automatic parsing with column specification that I
+# would like to mute ... I did that with message = FALSE
+
+voteview <- read_csv("HSall_members.csv")
+```
+
+```{r Question 3 Set Up}
+
+# Starting with the original data set and subsetting from there 
+q3 <- voteview %>%
+  filter(chamber == "Senate" | chamber == "House") %>%
+  filter(party_code == "100") %>%
+  
+  # Creating new variables.
+  # The new age variable was a little tricky and I had to make sure to use
+  # parentheses correctly, but this formula worked 
+  
+  mutate(age = (((2 * (congress - 1)) + 1789) - born)) %>%
+  
+  # Again had to multiply the result of percent_rank by 100
+  
+  mutate(nominate_percentile = (percent_rank(nominate_dim1) * 100) %>% round(2)) %>%
+  group_by(congress) %>%
+  nest()
+
+q3_plot <- q3 %>%
+  
+  # Series of map commands, each taking the last column as its input 
+  # Referred to the textbook and the example from class on 4/2
+  
+  mutate(mod = map(data, ~ lm(nominate_percentile ~ age, data = .)), 
+  reg_results = map(mod, ~ tidy(.)), 
+  
+  # Pulled the estimate column as well as the standard error column 
+  
+  coef = map_dbl(reg_results, ~ filter(., term == "age") %>%
+    pull(estimate)),
+  se = map_dbl(reg_results, ~ filter(., term == "age") %>%
+    pull(std.error))) %>%
+  
+  # Using the standard error method of calculating confidence intervals (as
+  # opposed to the percentile method) I need to use mean() here or can I just
+  # use coef itself? Does it make a difference?
+  
+  mutate(upper = coef + 1.96 * se) %>%
+  mutate(lower = coef - 1.96 * se)
+
+
+```
+
+Question 3:
+```{r Question 3 Plot}
+q3_plot %>%
+  ggplot(aes(x = congress, y = coef)) + 
+  
+  # Points originally were black, I wanted them to match the example in the pset
+  
+  geom_point(color = "blue") + 
+  
+  # Code from the pset, added a color argument so the errors bars would be blue
+  # too
+  
+  geom_errorbar(aes(x = congress, ymin = lower, ymax = upper), color = "blue") + 
+  labs(title = "Average Treatment Effect of Age on Conservatism 
+  Among Democrats Over Time",
+       subtitle = "Scores Use DW Nominate Dimension 1
+  95% Confidence Interval",
+       x = "Congress",
+       y = "Estimate") +
+  theme_classic()
+```
+
+
+
+
+
+Source: Lewis, Jeffrey B., Keith Poole, Howard Rosenthal, Adam Boche, Aaron Rudkin, and Luke Sonnet (2020). Voteview: Congressional Roll-Call Votes Database. https://voteview.com/
